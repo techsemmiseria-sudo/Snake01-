@@ -189,7 +189,7 @@
 
         @media (min-width: 769px) {
             #touch-controls {
-                display: none; /* Esconde no desktop */
+                display: none;
             }
         }
 
@@ -274,13 +274,13 @@
         </div>
     </div>
 
-    <!-- FIREBASE SDKs (Modular Import via ES Modules) -->
+    <!-- FIREBASE SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getDatabase, ref, set, onValue, remove, onDisconnect, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
         // ==========================================
-        // 1. CONFIGURAÇÃO DO FIREBASE (INTEGRADA)
+        // 1. CONFIGURAÇÃO DO FIREBASE
         // ==========================================
         const firebaseConfig = {
             apiKey: "AIzaSyC9UuNCZ50DlsZsWLJIX-TO4jo2Tr-s0qY",
@@ -337,7 +337,6 @@
         const spectatorTag = document.getElementById('spectator-mode');
         const leaderboardList = document.getElementById('leaderboard-list');
 
-        // Centralização e Redimensionamento Simétrico
         function resizeCanvas() {
             const margin = window.innerWidth <= 768 ? 140 : 60;
             const minDim = Math.min(window.innerWidth - 30, window.innerHeight - margin);
@@ -349,7 +348,6 @@
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
 
-        // Modo Tela Cheia (Fullscreen API)
         function enableFullscreen() {
             const elem = document.documentElement;
             if (elem.requestFullscreen) {
@@ -403,26 +401,27 @@
         }
 
         // ==========================================
-        // 4. SINCRONIZAÇÃO COM FIREBASE
+        // 4. SINCRONIZAÇÃO E LIMPEZA DE BANCO (FIREBASE)
         // ==========================================
         const playersRef = ref(db, 'players');
         const playerRef = ref(db, `players/${playerId}`);
         const foodRef = ref(db, 'gameState/food');
 
+        // Garante a remoção imediata no banco ao desconectar ou fechar a aba
         onDisconnect(playerRef).remove();
 
         onValue(playersRef, (snapshot) => {
             const data = snapshot.val() || {};
             remotePlayers = data;
 
-            // Adiciona novos jogadores ao objeto de interpolação
+            // Adiciona novos jogadores
             Object.keys(data).forEach(id => {
                 if (!interpolatedPlayers[id]) {
                     interpolatedPlayers[id] = JSON.parse(JSON.stringify(data[id]));
                 }
             });
 
-            // LIMPEZA IMEDIATA: Remove jogadores desconectados ou mortos da interpolação
+            // LIMPEZA IMEDIATA DE MEMÓRIA: Remove do cache local o que foi deletado do banco
             Object.keys(interpolatedPlayers).forEach(id => {
                 if (!data[id]) {
                     delete interpolatedPlayers[id];
@@ -452,6 +451,11 @@
             set(foodRef, { x: newX, y: newY });
         }
 
+        // Função de Limpeza do Jogador no Banco
+        function clearPlayerFromDatabase() {
+            remove(playerRef).catch(() => {});
+        }
+
         // ==========================================
         // 5. LÓGICA CORE DO JOGO (TICK LOOP)
         // ==========================================
@@ -459,6 +463,9 @@
         const BASE_TICK_RATE = 100;
 
         function spawnSnake() {
+            // Garante que o estado anterior no Firebase foi limpo antes de reiniciar
+            clearPlayerFromDatabase();
+
             const startX = Math.floor(Math.random() * (GRID_SIZE - 10)) + 5;
             const startY = Math.floor(Math.random() * (GRID_SIZE - 10)) + 5;
             localSnake.body = [
@@ -484,17 +491,16 @@
             
             localSnake.alive = false;
             
-            // Efeito visual de explosão no ponto de morte
             if (localSnake.body.length > 0) {
                 createExplosion(localSnake.body[0].x, localSnake.body[0].y, localSnake.color, 40);
             }
 
-            // LIMPEZA IMEDIATA DA COBRA LOCAL
+            // 1. Limpa os dados locais
             localSnake.body = [];
             delete interpolatedPlayers[localSnake.id];
 
-            // Remove o registro do banco para sumir da tela dos outros jogadores
-            remove(playerRef);
+            // 2. APAGA REGISTRO DO FIREBASE IMEDIATAMENTE ao morrer
+            clearPlayerFromDatabase();
 
             isSpectator = true;
             spectatorTag.style.display = 'block';
@@ -646,7 +652,7 @@
 
             updateInterpolation();
 
-            // Renderiza cobras dos outros jogadores
+            // Renderiza cobras remotas
             Object.keys(interpolatedPlayers).forEach(id => {
                 if (id !== localSnake.id) {
                     const p = interpolatedPlayers[id];
@@ -656,12 +662,12 @@
                 }
             });
 
-            // Renderiza cobra local apenas se estiver viva
+            // Renderiza cobra local se viva
             if (localSnake.alive && localSnake.body.length > 0) {
                 drawSnake(localSnake.body, localSnake.color, true);
             }
 
-            // Renderiza partículas
+            // Partículas
             particles.forEach((p, index) => {
                 p.update();
                 p.draw(ctx);
@@ -704,7 +710,7 @@
             localSnake.nextDir = { x: dx, y: dy };
         }
 
-        // --- Controles via Teclado (Desktop) ---
+        // --- Teclado ---
         window.addEventListener('keydown', (e) => {
             switch(e.key) {
                 case 'ArrowUp': case 'w': case 'W': changeDirection(0, -1); break;
@@ -714,7 +720,7 @@
             }
         });
 
-        // --- Controles Touch On-Screen (Mobile) ---
+        // --- Touch Buttons ---
         const bindTouchBtn = (id, dx, dy) => {
             const btn = document.getElementById(id);
             btn.addEventListener('touchstart', (e) => {
@@ -732,7 +738,7 @@
         bindTouchBtn('btn-left', -1, 0);
         bindTouchBtn('btn-right', 1, 0);
 
-        // --- Controles de Gesto Swipe no Canvas (Mobile) ---
+        // --- Touch Gestures ---
         let touchStartX = 0;
         let touchStartY = 0;
 
@@ -765,13 +771,15 @@
             }
         }, { passive: true });
 
-        // --- Evento Botão Iniciar / Reiniciar ---
+        // Eventos para fechar/atualizar página e descarregar o jogador do Firebase
+        window.addEventListener('beforeunload', clearPlayerFromDatabase);
+        window.addEventListener('pagehide', clearPlayerFromDatabase);
+
         startBtn.addEventListener('click', () => {
             enableFullscreen();
             spawnSnake();
         });
 
-        // Inicia Loop de Renderização
         requestAnimationFrame(render);
     </script>
 </body>
