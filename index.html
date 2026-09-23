@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neon Snake Royale</title>
+    <style>
+        :root {
+            --bg-color: #080811;
+            --card-bg: rgba(16, 16, 32, 0.75);
+            --primary-glow: #00f3ff;
+            --danger-glow: #ff0055;
+            --text-color: #ffffff;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--bg-color);
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* Container & Canvas Simétrico */
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: radial-gradient(circle at center, #12122c 0%, #080811 100%);
+        }
+
+        canvas {
+            background-color: rgba(5, 5, 12, 0.9);
+            box-shadow: 0 0 30px rgba(0, 243, 255, 0.15), inset 0 0 15px rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(0, 243, 255, 0.3);
+            border-radius: 12px;
+            display: block;
+        }
+
+        /* UI Overlays */
+        .ui-panel {
+            position: absolute;
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 12px 18px;
+            pointer-events: none;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        /* HUD Status Esquerdo */
+        #hud-status {
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+        }
+
+        /* Leaderboard Flutuante Direito */
+        #leaderboard {
+            top: 20px;
+            right: 20px;
+            min-width: 180px;
+            z-index: 10;
+        }
+
+        #leaderboard h3 {
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--primary-glow);
+            margin-bottom: 8px;
+            text-shadow: 0 0 8px var(--primary-glow);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 4px;
+            text-align: center;
+        }
+
+        #leaderboard ol {
+            list-style: none;
+        }
+
+        #leaderboard li {
+            font-size: 13px;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+            font-weight: 600;
+        }
+
+        /* Overlay de Death / Spectator */
+        #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(8, 8, 17, 0.88);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 20;
+            pointer-events: auto;
+            transition: opacity 0.3s ease;
+        }
+
+        #overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .title {
+            font-size: 3rem;
+            font-weight: 900;
+            text-transform: uppercase;
+            background: linear-gradient(45deg, #00f3ff, #ff0055);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 30px rgba(0, 243, 255, 0.5);
+            margin-bottom: 10px;
+            letter-spacing: 3px;
+            text-align: center;
+        }
+
+        .subtitle {
+            font-size: 1.1rem;
+            color: #a0a0c0;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #00f3ff 0%, #0066ff 100%);
+            color: #fff;
+            border: none;
+            padding: 16px 42px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            border-radius: 30px;
+            cursor: pointer;
+            box-shadow: 0 0 20px rgba(0, 243, 255, 0.4);
+            transition: all 0.2s ease;
+            letter-spacing: 1px;
+        }
+
+        .btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 30px rgba(0, 243, 255, 0.8);
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        /* Controles Touch Mobile Simétricos (D-Pad 3x3) */
+        #touch-controls {
+            position: absolute;
+            bottom: 25px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: grid;
+            grid-template-columns: repeat(3, 65px);
+            grid-template-rows: repeat(3, 65px);
+            gap: 8px;
+            z-index: 10;
+            opacity: 0.8;
+            justify-content: center;
+            align-content: center;
+        }
+
+        @media (min-width: 769px) {
+            #touch-controls {
+                display: none; /* Esconde no desktop */
+            }
+        }
+
+        .touch-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 16px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 26px;
+            color: #fff;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            transition: background 0.1s;
+        }
+
+        .touch-btn:active {
+            background: var(--primary-glow);
+            color: #000;
+            box-shadow: 0 0 20px var(--primary-glow);
+        }
+
+        #btn-up    { grid-column: 2; grid-row: 1; }
+        #btn-left  { grid-column: 1; grid-row: 2; }
+        #btn-right { grid-column: 3; grid-row: 2; }
+        #btn-down  { grid-column: 2; grid-row: 3; }
+
+        .spectator-tag {
+            color: var(--danger-glow);
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            animation: pulse 1.5s infinite;
+            display: none;
+            margin-top: 4px;
+            font-size: 12px;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.3; }
+            50% { opacity: 1; }
+            100% { opacity: 0.3; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <!-- HUD Left -->
+        <div id="hud-status" class="ui-panel">
+            <div>Pontos: <span id="score-val" style="color: var(--primary-glow); font-weight: bold;">0</span></div>
+            <div id="spectator-mode" class="spectator-tag">Modo Espectador</div>
+        </div>
+
+        <!-- Leaderboard Right -->
+        <div id="leaderboard" class="ui-panel">
+            <h3>TOP 3 NEONS</h3>
+            <ol id="leaderboard-list">
+                <li><span>---</span><span>0</span></li>
+                <li><span>---</span><span>0</span></li>
+                <li><span>---</span><span>0</span></li>
+            </ol>
+        </div>
+
+        <!-- Start/Game Over Overlay -->
+        <div id="overlay">
+            <h1 class="title" id="overlay-title">Neon Snake Royale</h1>
+            <p class="subtitle" id="overlay-sub">Sobreviva e domine a arena neon multiplayer!</p>
+            <button class="btn" id="start-btn">ENTRAR NA ARENA</button>
+        </div>
+
+        <!-- Game Canvas -->
+        <canvas id="gameCanvas"></canvas>
+
+        <!-- Touch Controls Simétricos -->
+        <div id="touch-controls">
+            <div class="touch-btn" id="btn-up">▲</div>
+            <div class="touch-btn" id="btn-left">◀</div>
+            <div class="touch-btn" id="btn-right">▶</div>
+            <div class="touch-btn" id="btn-down">▼</div>
+        </div>
+    </div>
+
+    <!-- FIREBASE SDKs (Modular Import via ES Modules) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getDatabase, ref, set, onValue, remove, onDisconnect, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+        // ==========================================
+        // 1. CONFIGURAÇÃO DO FIREBASE (INTEGRADA)
+        // ==========================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyC9UuNCZ50DlsZsWLJIX-TO4jo2Tr-s0qY",
+            authDomain: "snake01-f9f63.firebaseapp.com",
+            databaseURL: "https://snake01-f9f63-default-rtdb.firebaseio.com",
+            projectId: "snake01-f9f63",
+            storageBucket: "snake01-f9f63.firebasestorage.app",
+            messagingSenderId: "791247875288",
+            appId: "1:791247875288:web:1d3a229cd697bdec93bbad"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        // ==========================================
+        // 2. VARIÁVEIS DE CONFIGURAÇÃO E ESTADO
+        // ==========================================
+        const GRID_SIZE = 40;
+        const CANVAS_LOGICAL_SIZE = 800;
+        const CELL_SIZE = CANVAS_LOGICAL_SIZE / GRID_SIZE;
+
+        const NEON_COLORS = [
+            '#00f3ff', '#ff0055', '#00ff66', '#ff00ff', 
+            '#ffeb3b', '#ff9800', '#7d00ff', '#00ffff'
+        ];
+
+        const playerId = 'player_' + Math.random().toString(36).substring(2, 9);
+        let myColor = NEON_COLORS[Math.floor(Math.random() * NEON_COLORS.length)];
+        
+        let localSnake = {
+            id: playerId,
+            body: [],
+            dir: { x: 1, y: 0 },
+            nextDir: { x: 1, y: 0 },
+            score: 0,
+            color: myColor,
+            alive: false
+        };
+
+        let remotePlayers = {};
+        let interpolatedPlayers = {};
+        let food = { x: 15, y: 15 };
+        let particles = [];
+        let isSpectator = false;
+
+        // Elementos DOM
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const overlay = document.getElementById('overlay');
+        const overlayTitle = document.getElementById('overlay-title');
+        const overlaySub = document.getElementById('overlay-sub');
+        const startBtn = document.getElementById('start-btn');
+        const scoreVal = document.getElementById('score-val');
+        const spectatorTag = document.getElementById('spectator-mode');
+        const leaderboardList = document.getElementById('leaderboard-list');
+
+        // Centralização e Redimensionamento Simétrico
+        function resizeCanvas() {
+            const margin = window.innerWidth <= 768 ? 140 : 60;
+            const minDim = Math.min(window.innerWidth - 30, window.innerHeight - margin);
+            canvas.style.width = `${minDim}px`;
+            canvas.style.height = `${minDim}px`;
+            canvas.width = CANVAS_LOGICAL_SIZE;
+            canvas.height = CANVAS_LOGICAL_SIZE;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Modo Tela Cheia (Fullscreen API)
+        function enableFullscreen() {
+            const elem = document.documentElement;
+            if (elem.requestFullscreen) {
+                elem.requestFullscreen().catch(() => {});
+            } else if (elem.webkitRequestFullscreen) {
+                elem.webkitRequestFullscreen();
+            } else if (elem.msRequestFullscreen) {
+                elem.msRequestFullscreen();
+            }
+        }
+
+        // ==========================================
+        // 3. SISTEMA DE PARTÍCULAS
+        // ==========================================
+        class Particle {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                this.vx = (Math.random() - 0.5) * 8;
+                this.vy = (Math.random() - 0.5) * 8;
+                this.alpha = 1;
+                this.size = Math.random() * 4 + 2;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.alpha -= 0.02;
+            }
+
+            draw(context) {
+                context.save();
+                context.globalAlpha = Math.max(0, this.alpha);
+                context.shadowBlur = 10;
+                context.shadowColor = this.color;
+                context.fillStyle = this.color;
+                context.beginPath();
+                context.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                context.fill();
+                context.restore();
+            }
+        }
+
+        function createExplosion(x, y, color, count = 20) {
+            const pixelX = x * CELL_SIZE + CELL_SIZE / 2;
+            const pixelY = y * CELL_SIZE + CELL_SIZE / 2;
+            for (let i = 0; i < count; i++) {
+                particles.push(new Particle(pixelX, pixelY, color));
+            }
+        }
+
+        // ==========================================
+        // 4. SINCRONIZAÇÃO COM FIREBASE
+        // ==========================================
+        const playersRef = ref(db, 'players');
+        const playerRef = ref(db, `players/${playerId}`);
+        const foodRef = ref(db, 'gameState/food');
+
+        onDisconnect(playerRef).remove();
+
+        onValue(playersRef, (snapshot) => {
+            const data = snapshot.val() || {};
+            remotePlayers = data;
+
+            Object.keys(data).forEach(id => {
+                if (!interpolatedPlayers[id]) {
+                    interpolatedPlayers[id] = JSON.parse(JSON.stringify(data[id]));
+                }
+            });
+
+            Object.keys(interpolatedPlayers).forEach(id => {
+                if (!data[id]) delete interpolatedPlayers[id];
+            });
+
+            updateLeaderboard();
+        });
+
+        onValue(foodRef, (snapshot) => {
+            const data = snapshot.val();
+            if (data) food = data;
+        });
+
+        function pushLocalStateToFirebase() {
+            if (!localSnake.alive) return;
+            set(playerRef, {
+                id: localSnake.id,
+                body: localSnake.body,
+                color: localSnake.color,
+                score: localSnake.score,
+                lastUpdate: serverTimestamp()
+            });
+        }
+
+        function updateFoodOnFirebase(newX, newY) {
+            set(foodRef, { x: newX, y: newY });
+        }
+
+        // ==========================================
+        // 5. LÓGICA CORE DO JOGO (TICK LOOP)
+        // ==========================================
+        let lastTickTime = 0;
+        const BASE_TICK_RATE = 100;
+
+        function spawnSnake() {
+            const startX = Math.floor(Math.random() * (GRID_SIZE - 10)) + 5;
+            const startY = Math.floor(Math.random() * (GRID_SIZE - 10)) + 5;
+            localSnake.body = [
+                { x: startX, y: startY },
+                { x: startX - 1, y: startY },
+                { x: startX - 2, y: startY }
+            ];
+            localSnake.dir = { x: 1, y: 0 };
+            localSnake.nextDir = { x: 1, y: 0 };
+            localSnake.score = 0;
+            localSnake.alive = true;
+            isSpectator = false;
+
+            scoreVal.innerText = '0';
+            spectatorTag.style.display = 'none';
+            overlay.classList.add('hidden');
+
+            pushLocalStateToFirebase();
+        }
+
+        function killPlayer() {
+            if (!localSnake.alive) return;
+            
+            localSnake.alive = false;
+            createExplosion(localSnake.body[0].x, localSnake.body[0].y, localSnake.color, 40);
+            remove(playerRef);
+
+            isSpectator = true;
+            spectatorTag.style.display = 'block';
+
+            setTimeout(() => {
+                overlayTitle.innerText = "VOCÊ MORREU!";
+                overlayTitle.style.background = "linear-gradient(45deg, #ff0055, #ff5500)";
+                overlayTitle.style.webkitBackgroundClip = "text";
+                overlaySub.innerText = `Sua pontuação final foi: ${localSnake.score}`;
+                startBtn.innerText = "JOGAR NOVAMENTE";
+                overlay.classList.remove('hidden');
+            }, 1200);
+        }
+
+        function gameTick() {
+            if (!localSnake.alive) return;
+
+            localSnake.dir = { ...localSnake.nextDir };
+
+            const head = { ...localSnake.body[0] };
+            head.x += localSnake.dir.x;
+            head.y += localSnake.dir.y;
+
+            if (head.x < 0 || head.x >= GRID_SIZE || head.y < 0 || head.y >= GRID_SIZE) {
+                killPlayer();
+                return;
+            }
+
+            for (let segment of localSnake.body) {
+                if (head.x === segment.x && head.y === segment.y) {
+                    killPlayer();
+                    return;
+                }
+            }
+
+            Object.keys(remotePlayers).forEach(id => {
+                if (id === localSnake.id) return;
+                const other = remotePlayers[id];
+                if (!other.body) return;
+
+                other.body.forEach((segment) => {
+                    if (head.x === segment.x && head.y === segment.y) {
+                        killPlayer();
+                    }
+                });
+            });
+
+            if (!localSnake.alive) return;
+
+            localSnake.body.unshift(head);
+
+            if (head.x === food.x && head.y === food.y) {
+                localSnake.score += 10;
+                scoreVal.innerText = localSnake.score;
+                createExplosion(food.x, food.y, '#00ff66', 15);
+
+                const newFoodX = Math.floor(Math.random() * GRID_SIZE);
+                const newFoodY = Math.floor(Math.random() * GRID_SIZE);
+                updateFoodOnFirebase(newFoodX, newFoodY);
+            } else {
+                localSnake.body.pop();
+            }
+
+            pushLocalStateToFirebase();
+        }
+
+        // ==========================================
+        // 6. RENDERIZAÇÃO & INTERPOLAÇÃO
+        // ==========================================
+        function updateInterpolation() {
+            Object.keys(remotePlayers).forEach(id => {
+                if (id === localSnake.id) return;
+
+                const target = remotePlayers[id];
+                let current = interpolatedPlayers[id];
+
+                if (!current || !target.body) return;
+
+                if (current.body.length !== target.body.length) {
+                    current.body = JSON.parse(JSON.stringify(target.body));
+                } else {
+                    for (let i = 0; i < target.body.length; i++) {
+                        current.body[i].x += (target.body[i].x - current.body[i].x) * 0.4;
+                        current.body[i].y += (target.body[i].y - current.body[i].y) * 0.4;
+                    }
+                }
+                current.score = target.score;
+                current.color = target.color;
+            });
+        }
+
+        function drawGrid() {
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.02)';
+            ctx.lineWidth = 1;
+            for (let i = 0; i <= CANVAS_LOGICAL_SIZE; i += CELL_SIZE) {
+                ctx.beginPath();
+                ctx.moveTo(i, 0); ctx.lineTo(i, CANVAS_LOGICAL_SIZE);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(0, i); ctx.lineTo(CANVAS_LOGICAL_SIZE, i);
+                ctx.stroke();
+            }
+        }
+
+        function drawSnake(body, color, isLocal = false) {
+            if (!body || body.length === 0) return;
+
+            ctx.save();
+            ctx.shadowBlur = isLocal ? 15 : 8;
+            ctx.shadowColor = color;
+            ctx.fillStyle = color;
+
+            body.forEach((seg, index) => {
+                const px = seg.x * CELL_SIZE;
+                const py = seg.y * CELL_SIZE;
+                const radius = index === 0 ? 6 : 3;
+
+                ctx.beginPath();
+                ctx.roundRect(px + 1, py + 1, CELL_SIZE - 2, CELL_SIZE - 2, radius);
+                ctx.fill();
+            });
+            ctx.restore();
+        }
+
+        function drawFood() {
+            const px = food.x * CELL_SIZE + CELL_SIZE / 2;
+            const py = food.y * CELL_SIZE + CELL_SIZE / 2;
+
+            ctx.save();
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = '#00ff66';
+            ctx.fillStyle = '#00ff66';
+            ctx.beginPath();
+            ctx.arc(px, py, CELL_SIZE / 2 - 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        function render(timestamp) {
+            ctx.clearRect(0, 0, CANVAS_LOGICAL_SIZE, CANVAS_LOGICAL_SIZE);
+
+            drawGrid();
+            drawFood();
+
+            updateInterpolation();
+
+            Object.keys(interpolatedPlayers).forEach(id => {
+                if (id !== localSnake.id) {
+                    const p = interpolatedPlayers[id];
+                    drawSnake(p.body, p.color, false);
+                }
+            });
+
+            if (localSnake.alive) {
+                drawSnake(localSnake.body, localSnake.color, true);
+            }
+
+            particles.forEach((p, index) => {
+                p.update();
+                p.draw(ctx);
+                if (p.alpha <= 0) particles.splice(index, 1);
+            });
+
+            if (timestamp - lastTickTime > BASE_TICK_RATE) {
+                gameTick();
+                lastTickTime = timestamp;
+            }
+
+            requestAnimationFrame(render);
+        }
+
+        // ==========================================
+        // 7. INTERFACE, LEADERBOARD & CONTROLES
+        // ==========================================
+        function updateLeaderboard() {
+            const playersArr = Object.values(remotePlayers);
+            playersArr.sort((a, b) => (b.score || 0) - (a.score || 0));
+
+            const top3 = playersArr.slice(0, 3);
+            leaderboardList.innerHTML = '';
+
+            for (let i = 0; i < 3; i++) {
+                const li = document.createElement('li');
+                if (top3[i]) {
+                    const name = top3[i].id === localSnake.id ? "Você" : top3[i].id.substring(0, 6);
+                    li.innerHTML = `<span style="color: ${top3[i].color}">${name}</span><span>${top3[i].score || 0}</span>`;
+                } else {
+                    li.innerHTML = `<span style="color: #444">---</span><span>0</span>`;
+                }
+                leaderboardList.appendChild(li);
+            }
+        }
+
+        function changeDirection(dx, dy) {
+            if (dx !== 0 && localSnake.dir.x === -dx) return;
+            if (dy !== 0 && localSnake.dir.y === -dy) return;
+            localSnake.nextDir = { x: dx, y: dy };
+        }
+
+        // --- Controles via Teclado (Desktop) ---
+        window.addEventListener('keydown', (e) => {
+            switch(e.key) {
+                case 'ArrowUp': case 'w': case 'W': changeDirection(0, -1); break;
+                case 'ArrowDown': case 's': case 'S': changeDirection(0, 1); break;
+                case 'ArrowLeft': case 'a': case 'A': changeDirection(-1, 0); break;
+                case 'ArrowRight': case 'd': case 'D': changeDirection(1, 0); break;
+            }
+        });
+
+        // --- Controles Touch On-Screen (Mobile) ---
+        const bindTouchBtn = (id, dx, dy) => {
+            const btn = document.getElementById(id);
+            btn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                changeDirection(dx, dy);
+            });
+            btn.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                changeDirection(dx, dy);
+            });
+        };
+
+        bindTouchBtn('btn-up', 0, -1);
+        bindTouchBtn('btn-down', 0, 1);
+        bindTouchBtn('btn-left', -1, 0);
+        bindTouchBtn('btn-right', 1, 0);
+
+        // --- Controles de Gesto Swipe no Canvas (Mobile) ---
+        let touchStartX = 0;
+        let touchStartY = 0;
+
+        window.addEventListener('touchstart', (e) => {
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+        }, { passive: true });
+
+        window.addEventListener('touchend', (e) => {
+            if (!localSnake.alive) return;
+
+            const touchEndX = e.changedTouches[0].clientX;
+            const touchEndY = e.changedTouches[0].clientY;
+
+            const diffX = touchEndX - touchStartX;
+            const diffY = touchEndY - touchStartY;
+
+            const minSwipeDistance = 30;
+
+            if (Math.abs(diffX) > Math.abs(diffY)) {
+                if (Math.abs(diffX) > minSwipeDistance) {
+                    if (diffX > 0) changeDirection(1, 0);
+                    else changeDirection(-1, 0);
+                }
+            } else {
+                if (Math.abs(diffY) > minSwipeDistance) {
+                    if (diffY > 0) changeDirection(0, 1);
+                    else changeDirection(0, -1);
+                }
+            }
+        }, { passive: true });
+
+        // --- Evento Botão Iniciar / Reiniciar ---
+        startBtn.addEventListener('click', () => {
+            enableFullscreen();
+            spawnSnake();
+        });
+
+        // Inicia Loop de Renderização
+        requestAnimationFrame(render);
+    </script>
+</body>
+</html>
