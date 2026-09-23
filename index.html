@@ -415,14 +415,18 @@
             const data = snapshot.val() || {};
             remotePlayers = data;
 
+            // Adiciona novos jogadores ao objeto de interpolação
             Object.keys(data).forEach(id => {
                 if (!interpolatedPlayers[id]) {
                     interpolatedPlayers[id] = JSON.parse(JSON.stringify(data[id]));
                 }
             });
 
+            // LIMPEZA IMEDIATA: Remove jogadores desconectados ou mortos da interpolação
             Object.keys(interpolatedPlayers).forEach(id => {
-                if (!data[id]) delete interpolatedPlayers[id];
+                if (!data[id]) {
+                    delete interpolatedPlayers[id];
+                }
             });
 
             updateLeaderboard();
@@ -479,7 +483,17 @@
             if (!localSnake.alive) return;
             
             localSnake.alive = false;
-            createExplosion(localSnake.body[0].x, localSnake.body[0].y, localSnake.color, 40);
+            
+            // Efeito visual de explosão no ponto de morte
+            if (localSnake.body.length > 0) {
+                createExplosion(localSnake.body[0].x, localSnake.body[0].y, localSnake.color, 40);
+            }
+
+            // LIMPEZA IMEDIATA DA COBRA LOCAL
+            localSnake.body = [];
+            delete interpolatedPlayers[localSnake.id];
+
+            // Remove o registro do banco para sumir da tela dos outros jogadores
             remove(playerRef);
 
             isSpectator = true;
@@ -519,7 +533,7 @@
             Object.keys(remotePlayers).forEach(id => {
                 if (id === localSnake.id) return;
                 const other = remotePlayers[id];
-                if (!other.body) return;
+                if (!other || !other.body) return;
 
                 other.body.forEach((segment) => {
                     if (head.x === segment.x && head.y === segment.y) {
@@ -557,7 +571,12 @@
                 const target = remotePlayers[id];
                 let current = interpolatedPlayers[id];
 
-                if (!current || !target.body) return;
+                if (!target || !target.body) {
+                    delete interpolatedPlayers[id];
+                    return;
+                }
+
+                if (!current) return;
 
                 if (current.body.length !== target.body.length) {
                     current.body = JSON.parse(JSON.stringify(target.body));
@@ -627,17 +646,22 @@
 
             updateInterpolation();
 
+            // Renderiza cobras dos outros jogadores
             Object.keys(interpolatedPlayers).forEach(id => {
                 if (id !== localSnake.id) {
                     const p = interpolatedPlayers[id];
-                    drawSnake(p.body, p.color, false);
+                    if (p && p.body) {
+                        drawSnake(p.body, p.color, false);
+                    }
                 }
             });
 
-            if (localSnake.alive) {
+            // Renderiza cobra local apenas se estiver viva
+            if (localSnake.alive && localSnake.body.length > 0) {
                 drawSnake(localSnake.body, localSnake.color, true);
             }
 
+            // Renderiza partículas
             particles.forEach((p, index) => {
                 p.update();
                 p.draw(ctx);
