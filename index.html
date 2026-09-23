@@ -279,9 +279,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getDatabase, ref, set, onValue, remove, onDisconnect, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
-        // ==========================================
-        // 1. CONFIGURAÇÃO DO FIREBASE
-        // ==========================================
+        // Configuração do Firebase
         const firebaseConfig = {
             apiKey: "AIzaSyC9UuNCZ50DlsZsWLJIX-TO4jo2Tr-s0qY",
             authDomain: "snake01-f9f63.firebaseapp.com",
@@ -295,9 +293,6 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        // ==========================================
-        // 2. VARIÁVEIS DE CONFIGURAÇÃO E ESTADO
-        // ==========================================
         const GRID_SIZE = 40;
         const CANVAS_LOGICAL_SIZE = 800;
         const CELL_SIZE = CANVAS_LOGICAL_SIZE / GRID_SIZE;
@@ -326,7 +321,6 @@
         let particles = [];
         let isSpectator = false;
 
-        // Elementos DOM
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         const overlay = document.getElementById('overlay');
@@ -359,9 +353,7 @@
             }
         }
 
-        // ==========================================
-        // 3. SISTEMA DE PARTÍCULAS
-        // ==========================================
+        // Partículas
         class Particle {
             constructor(x, y, color) {
                 this.x = x;
@@ -400,28 +392,39 @@
             }
         }
 
-        // ==========================================
-        // 4. SINCRONIZAÇÃO E LIMPEZA DE BANCO (FIREBASE)
-        // ==========================================
+        // --- REFERÊNCIAS DO FIREBASE ---
         const playersRef = ref(db, 'players');
         const playerRef = ref(db, `players/${playerId}`);
         const foodRef = ref(db, 'gameState/food');
 
-        // Garante a remoção imediata no banco ao desconectar ou fechar a aba
         onDisconnect(playerRef).remove();
+
+        // Limpeza de registros inativos (mais velhos que 3.5s)
+        const STALE_THRESHOLD_MS = 3500;
 
         onValue(playersRef, (snapshot) => {
             const data = snapshot.val() || {};
-            remotePlayers = data;
+            const now = Date.now();
 
-            // Adiciona novos jogadores
             Object.keys(data).forEach(id => {
+                const player = data[id];
+
+                // Limpa jogadores fantasmas travados no banco
+                if (player.lastUpdate && (now - player.lastUpdate > STALE_THRESHOLD_MS)) {
+                    remove(ref(db, `players/${id}`));
+                    delete data[id];
+                    delete interpolatedPlayers[id];
+                    return;
+                }
+
                 if (!interpolatedPlayers[id]) {
-                    interpolatedPlayers[id] = JSON.parse(JSON.stringify(data[id]));
+                    interpolatedPlayers[id] = JSON.parse(JSON.stringify(player));
                 }
             });
 
-            // LIMPEZA IMEDIATA DE MEMÓRIA: Remove do cache local o que foi deletado do banco
+            remotePlayers = data;
+
+            // Limpa jogadores removidos
             Object.keys(interpolatedPlayers).forEach(id => {
                 if (!data[id]) {
                     delete interpolatedPlayers[id];
@@ -443,7 +446,7 @@
                 body: localSnake.body,
                 color: localSnake.color,
                 score: localSnake.score,
-                lastUpdate: serverTimestamp()
+                lastUpdate: Date.now()
             });
         }
 
@@ -451,19 +454,15 @@
             set(foodRef, { x: newX, y: newY });
         }
 
-        // Função de Limpeza do Jogador no Banco
         function clearPlayerFromDatabase() {
             remove(playerRef).catch(() => {});
         }
 
-        // ==========================================
-        // 5. LÓGICA CORE DO JOGO (TICK LOOP)
-        // ==========================================
+        // Loop de Jogo
         let lastTickTime = 0;
         const BASE_TICK_RATE = 100;
 
         function spawnSnake() {
-            // Garante que o estado anterior no Firebase foi limpo antes de reiniciar
             clearPlayerFromDatabase();
 
             const startX = Math.floor(Math.random() * (GRID_SIZE - 10)) + 5;
@@ -495,11 +494,10 @@
                 createExplosion(localSnake.body[0].x, localSnake.body[0].y, localSnake.color, 40);
             }
 
-            // 1. Limpa os dados locais
             localSnake.body = [];
             delete interpolatedPlayers[localSnake.id];
 
-            // 2. APAGA REGISTRO DO FIREBASE IMEDIATAMENTE ao morrer
+            // REMOVE IMEDIATAMENTE DO FIREBASE AO MORRER
             clearPlayerFromDatabase();
 
             isSpectator = true;
@@ -524,11 +522,13 @@
             head.x += localSnake.dir.x;
             head.y += localSnake.dir.y;
 
+            // Colisão com Paredes
             if (head.x < 0 || head.x >= GRID_SIZE || head.y < 0 || head.y >= GRID_SIZE) {
                 killPlayer();
                 return;
             }
 
+            // Colisão com Próprio Corpo
             for (let segment of localSnake.body) {
                 if (head.x === segment.x && head.y === segment.y) {
                     killPlayer();
@@ -536,6 +536,7 @@
                 }
             }
 
+            // Colisão com Outros Jogadores
             Object.keys(remotePlayers).forEach(id => {
                 if (id === localSnake.id) return;
                 const other = remotePlayers[id];
@@ -552,6 +553,7 @@
 
             localSnake.body.unshift(head);
 
+            // Coleta de Comida
             if (head.x === food.x && head.y === food.y) {
                 localSnake.score += 10;
                 scoreVal.innerText = localSnake.score;
@@ -567,9 +569,7 @@
             pushLocalStateToFirebase();
         }
 
-        // ==========================================
-        // 6. RENDERIZAÇÃO & INTERPOLAÇÃO
-        // ==========================================
+        // Renderização & Interpolação
         function updateInterpolation() {
             Object.keys(remotePlayers).forEach(id => {
                 if (id === localSnake.id) return;
@@ -652,22 +652,20 @@
 
             updateInterpolation();
 
-            // Renderiza cobras remotas
+            // Desenha apenas cobras de jogadores realmente vivos no banco
             Object.keys(interpolatedPlayers).forEach(id => {
                 if (id !== localSnake.id) {
                     const p = interpolatedPlayers[id];
-                    if (p && p.body) {
+                    if (p && p.body && p.body.length > 0) {
                         drawSnake(p.body, p.color, false);
                     }
                 }
             });
 
-            // Renderiza cobra local se viva
             if (localSnake.alive && localSnake.body.length > 0) {
                 drawSnake(localSnake.body, localSnake.color, true);
             }
 
-            // Partículas
             particles.forEach((p, index) => {
                 p.update();
                 p.draw(ctx);
@@ -682,9 +680,7 @@
             requestAnimationFrame(render);
         }
 
-        // ==========================================
-        // 7. INTERFACE, LEADERBOARD & CONTROLES
-        // ==========================================
+        // Leaderboard e Controles
         function updateLeaderboard() {
             const playersArr = Object.values(remotePlayers);
             playersArr.sort((a, b) => (b.score || 0) - (a.score || 0));
@@ -710,7 +706,6 @@
             localSnake.nextDir = { x: dx, y: dy };
         }
 
-        // --- Teclado ---
         window.addEventListener('keydown', (e) => {
             switch(e.key) {
                 case 'ArrowUp': case 'w': case 'W': changeDirection(0, -1); break;
@@ -720,7 +715,6 @@
             }
         });
 
-        // --- Touch Buttons ---
         const bindTouchBtn = (id, dx, dy) => {
             const btn = document.getElementById(id);
             btn.addEventListener('touchstart', (e) => {
@@ -738,7 +732,6 @@
         bindTouchBtn('btn-left', -1, 0);
         bindTouchBtn('btn-right', 1, 0);
 
-        // --- Touch Gestures ---
         let touchStartX = 0;
         let touchStartY = 0;
 
@@ -771,7 +764,6 @@
             }
         }, { passive: true });
 
-        // Eventos para fechar/atualizar página e descarregar o jogador do Firebase
         window.addEventListener('beforeunload', clearPlayerFromDatabase);
         window.addEventListener('pagehide', clearPlayerFromDatabase);
 
